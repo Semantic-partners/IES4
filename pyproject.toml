@@ -25,6 +25,9 @@ Repository = "https://github.com/Telicent-io/shacl-tool"
 [project.scripts]
 owl2shacl = "src.owl2Shacl:main"
 
+[tool.distutils.bdist_wheel]
+universal = true
+
 [tool.setuptools]
 include-package-data = true
 
