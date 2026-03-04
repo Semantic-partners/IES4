@@ -192,8 +192,8 @@ def create_shacl(ontology: str | Path | Graph) -> Tuple[Graph, Graph]:
     _create_node_shapes_for_classes(ont_graph, sh_graph)
     #  crude way of converting nonNegativeIntegers types to integers
     for s, p, o in sh_graph:
-        if o.__class__ == rdflib.term.Literal and o.datatype == XSD.nonNegativeInteger:
-            updated_o = Literal(o.value, datatype=XSD.integer)
+        if o.__class__ == rdflib.term.Literal and Literal(o).datatype == XSD.nonNegativeInteger:
+            updated_o = Literal(Literal(o).value, datatype=XSD.integer)
             sh_graph.remove((s, p, o))
             sh_graph.add((s, p, updated_o))
     _create_node_shapes_for_properties(ont_graph, sh_graph, OWL.ObjectProperty)
@@ -239,8 +239,9 @@ def main(argv):
     else:
         ont_graph, sh_graph = create_shacl(args.ontology)
         if args.dryrun:
+            existing_shacl = Graph()
             try:
-                existing_shacl = Graph().parse(args.shacl)
+                existing_shacl.parse(args.shacl)
                 assert isomorphic(existing_shacl, sh_graph)
                 print("There are no changes in the shacl shape graph")
             except AssertionError:
