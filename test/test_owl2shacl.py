@@ -31,7 +31,7 @@ class TestOwl2Shacl(unittest.TestCase):
         conforms, results_graph, results_text = rdf_validate(
             "Sample Data/hospital.ttl", ont_graph, sh_graph)
         self.assertTrue(conforms)
-        self.assertEquals("Validation Report\nConforms: True\n", results_text)
+        self.assertEqual("Validation Report\nConforms: True\n", results_text)
         assert isomorphic(expected_result, results_graph)
 
     # @unittest.skip("done")

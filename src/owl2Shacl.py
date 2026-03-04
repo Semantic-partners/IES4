@@ -1,5 +1,6 @@
 import argparse
 import sys
+import rdflib
 from pathlib import Path
 from typing import Tuple
 from pyshacl import validate
@@ -103,7 +104,7 @@ def add_restriction(ont_graph, sh_graph, item,  restriction):
         else:
             property_shape = item
         sh_graph.add((property_shape, SH.path, restriction["path"]))
-        sh_graph.add((property_shape, SH.minCount, Literal(1, datatype=XSD.nonNegativeInteger)))
+        sh_graph.add((property_shape, SH.minCount, Literal(1, datatype=XSD.integer)))
         sh_graph.add((property_shape, SH_CLASS, restriction["some"]))
     elif restriction["union"]:
         if type(item) is not BNode:
@@ -138,18 +139,26 @@ def add_restriction(ont_graph, sh_graph, item,  restriction):
             sh_graph.add((item, SH.property, property_shape))
 
         if restriction["path"]: sh_graph.add((property_shape, SH.path, restriction["path"]))
-        if restriction["class"]: sh_graph.add((property_shape, SH_CLASS, restriction["class"]))
+        if restriction["class"]:
+            # if we are not dealing with qualified cardinality
+            if not restriction["maxqc"] and not restriction["minqc"] and not restriction["qexact"]:
+                sh_graph.add((property_shape, SH_CLASS, restriction["class"]))
+            else:
+                bnode = BNode()
+                sh_graph.add((property_shape, SH.qualifiedValueShape, bnode))
+                sh_graph.add((bnode, SH_CLASS, restriction["class"]))
         if restriction["value"]: sh_graph.add((property_shape, SH.hasValue, restriction["value"]))
         if restriction["minc"]: sh_graph.add((property_shape, SH.minCount, restriction["minc"]))
-        if restriction["minqc"]: sh_graph.add((property_shape, SH.minCount, restriction["minqc"]))
+        if restriction["minqc"]:
+            sh_graph.add((property_shape, SH.qualifiedMinCount, restriction["minqc"]))
         if restriction["maxc"]: sh_graph.add((property_shape, SH.maxCount, restriction["maxc"]))
-        if restriction["maxqc"]: sh_graph.add((property_shape, SH.maxCount, restriction["maxqc"]))
+        if restriction["maxqc"]: sh_graph.add((property_shape, SH.qualifiedMaxCount, restriction["maxqc"]))
         if restriction["exact"]:
             sh_graph.add((property_shape, SH.minCount, restriction["exact"]))
             sh_graph.add((property_shape, SH.maxCount, restriction["exact"]))
         if restriction["qexact"]:
-            sh_graph.add((property_shape, SH.minCount, restriction["qexact"]))
-            sh_graph.add((property_shape, SH.maxCount, restriction["qexact"]))
+            sh_graph.add((property_shape, SH.qualifiedMinCount, restriction["qexact"]))
+            sh_graph.add((property_shape, SH.qualifiedMaxCount, restriction["qexact"]))
 
 
 def _create_node_shapes_for_classes(ont_graph: Graph, sh_graph: Graph) -> None:
@@ -181,6 +190,12 @@ def create_shacl(ontology: str | Path | Graph) -> Tuple[Graph, Graph]:
         sh_graph.bind(name, ns, replace=True)
 
     _create_node_shapes_for_classes(ont_graph, sh_graph)
+    #  crude way of converting nonNegativeIntegers types to integers
+    for s, p, o in sh_graph:
+        if o.__class__ == rdflib.term.Literal and o.datatype == XSD.nonNegativeInteger:
+            updated_o = Literal(o.value, datatype=XSD.integer)
+            sh_graph.remove((s, p, o))
+            sh_graph.add((s, p, updated_o))
     _create_node_shapes_for_properties(ont_graph, sh_graph, OWL.ObjectProperty)
     _create_node_shapes_for_properties(ont_graph, sh_graph, OWL.DatatypeProperty)
 
@@ -219,6 +234,7 @@ def main(argv):
     args = _parse_args()
     if args.validate:
         conforms, results_graph, results_text = rdf_validate(args.validate, args.ontology, args.shacl)
+        # print(results_graph.serialize(format="turtle"))
         print(results_text)
     else:
         ont_graph, sh_graph = create_shacl(args.ontology)
@@ -238,7 +254,7 @@ def main(argv):
                 print(f"Triple that would be create by this run: {len(added_content)}")
                 print(added_content.serialize(format="turtle"))
         else:
-            sh_graph.serialize(forat="turtle", destination=args.shacl)
+            sh_graph.serialize(format="turtle", destination=args.shacl)
 
 
 if __name__ == "__main__":

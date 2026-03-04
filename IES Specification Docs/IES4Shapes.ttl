@@ -3,7 +3,7 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 
-ies:xxxACopyOfDomainShape a sh:NodeShape ;
+ies:ACopyOfDomainShape a sh:NodeShape ;
     sh:class ies:IndividualDocument ;
     sh:severity sh:Warning ;
     sh:targetSubjectsOf ies:aCopyOf .
