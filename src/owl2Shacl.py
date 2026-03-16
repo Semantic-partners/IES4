@@ -70,26 +70,27 @@ def _create_node_shapes_for_properties(ont_graph, sh_graph, property_type):
         _add_shape_triples_to_graph(ont_graph, sh_graph, property_type, property_shape, targets, prop)
 
 
-def bind_restriction_values( ont_graph, restriction: Node):
+def bind_restriction_values(ont_graph, restriction: Node):
     return {
-                "path": ont_graph.value(subject=restriction, predicate=OWL.onProperty),
-                "class": ont_graph.value(subject=restriction, predicate=OWL.onClass),
-                "some": ont_graph.value(subject=restriction, predicate=OWL.someValuesFrom),
-                "all_values": ont_graph.value(subject=restriction, predicate=OWL.allValuesFrom),
-                "value": ont_graph.value(subject=restriction, predicate=OWL.hasValue),
-                "minqc": ont_graph.value(subject=restriction, predicate=OWL.minQualifiedCardinality),
-                "minc": ont_graph.value(subject=restriction, predicate=OWL.minCardinality),
-                "maxqc": ont_graph.value(subject=restriction, predicate=OWL.maxQualifiedCardinality),
-                "maxc": ont_graph.value(subject=restriction, predicate=OWL.maxCardinality),
-                "qexact": ont_graph.value(subject=restriction, predicate=OWL.qualifiedCardinality),
-                "exact": ont_graph.value(subject=restriction, predicate=OWL.cardinality),
-                "union": ont_graph.value(subject=restriction, predicate=OWL.unionOf),
-                "intersection": ont_graph.value(subject=restriction, predicate=OWL.intersectionOf),
-                "first": ont_graph.value(subject=restriction, predicate=RDF.first),
-                "rest": ont_graph.value(subject=restriction, predicate=RDF.rest)
+        "path": ont_graph.value(subject=restriction, predicate=OWL.onProperty),
+        "class": ont_graph.value(subject=restriction, predicate=OWL.onClass),
+        "some": ont_graph.value(subject=restriction, predicate=OWL.someValuesFrom),
+        "all_values": ont_graph.value(subject=restriction, predicate=OWL.allValuesFrom),
+        "value": ont_graph.value(subject=restriction, predicate=OWL.hasValue),
+        "minqc": ont_graph.value(subject=restriction, predicate=OWL.minQualifiedCardinality),
+        "minc": ont_graph.value(subject=restriction, predicate=OWL.minCardinality),
+        "maxqc": ont_graph.value(subject=restriction, predicate=OWL.maxQualifiedCardinality),
+        "maxc": ont_graph.value(subject=restriction, predicate=OWL.maxCardinality),
+        "qexact": ont_graph.value(subject=restriction, predicate=OWL.qualifiedCardinality),
+        "exact": ont_graph.value(subject=restriction, predicate=OWL.cardinality),
+        "union": ont_graph.value(subject=restriction, predicate=OWL.unionOf),
+        "intersection": ont_graph.value(subject=restriction, predicate=OWL.intersectionOf),
+        "first": ont_graph.value(subject=restriction, predicate=RDF.first),
+        "rest": ont_graph.value(subject=restriction, predicate=RDF.rest)
     }
 
-def add_restriction(ont_graph, sh_graph, item,  restriction):
+
+def add_restriction(ont_graph, sh_graph, item, restriction):
     property_shape = BNode()
     if restriction["all_values"]:
         if type(item) is not BNode:
@@ -98,6 +99,8 @@ def add_restriction(ont_graph, sh_graph, item,  restriction):
             sh_graph.add((item, SH.property, property_shape))
         sh_graph.add((property_shape, SH.path, restriction["path"]))
         sh_graph.add((property_shape, SH_CLASS, restriction["all_values"]))
+        # prevent defaulting to SH.Violation
+        sh_graph.add((property_shape, SH.severity, SH.Warning))
     elif restriction["some"]:
         if type(item) is not BNode:
             sh_graph.add((URIRef(str(item) + 'Shape'), SH.property, property_shape))
@@ -106,6 +109,8 @@ def add_restriction(ont_graph, sh_graph, item,  restriction):
         sh_graph.add((property_shape, SH.path, restriction["path"]))
         sh_graph.add((property_shape, SH.minCount, Literal(1, datatype=XSD.integer)))
         sh_graph.add((property_shape, SH_CLASS, restriction["some"]))
+        # prevent defaulting to SH.Violation
+        sh_graph.add((property_shape, SH.severity, SH.Warning))
     elif restriction["union"]:
         if type(item) is not BNode:
             sh_graph.add((URIRef(str(item) + 'Shape'), SH_OR, restriction["union"]))
@@ -159,6 +164,8 @@ def add_restriction(ont_graph, sh_graph, item,  restriction):
         if restriction["qexact"]:
             sh_graph.add((property_shape, SH.qualifiedMinCount, restriction["qexact"]))
             sh_graph.add((property_shape, SH.qualifiedMaxCount, restriction["qexact"]))
+        # prevent defaulting to SH.Violation
+        sh_graph.add((property_shape, SH.severity, SH.Warning))
 
 
 def _create_node_shapes_for_classes(ont_graph: Graph, sh_graph: Graph) -> None:
@@ -202,13 +209,25 @@ def create_shacl(ontology: str | Path | Graph) -> Tuple[Graph, Graph]:
     return ont_graph, sh_graph
 
 
-def rdf_validate(data_file: str | Graph, ont_graph: str | Graph, sh_graph: str | Graph) -> Tuple[
-        bool, Graph, str]:
-    # run shacl validation
+def rdf_validate(
+        data_file: str | Graph,
+        ont_graph: str | Graph,
+        sh_graph: str | Graph,
+        # We have added inference as an argument to allow users to specify
+        # the type of inference they want to apply during validation.
+        # The default value is set to "none", which means no inference will be applied unless specified otherwise.
+        inference: str = "none"
+) -> Tuple[bool, Graph, str]:
+    """
+    Validate RDF data using SHACL shapes.
+
+    Args:
+        inference: One of "rdfs", "owlrl", "both", or "none"
+    """
     conforms, results_graph, results_text = validate(data_file,
                                                      shacl_graph=sh_graph,
                                                      ont_graph=ont_graph,
-                                                     inference='none',
+                                                     inference=inference,
                                                      abort_on_first=False,
                                                      allow_infos=False,
                                                      allow_warnings=False,
@@ -260,4 +279,3 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-
