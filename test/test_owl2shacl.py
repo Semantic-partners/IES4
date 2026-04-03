@@ -2,7 +2,7 @@ import sys
 import unittest
 import logging
 from pathlib import Path
-from rdflib.compare import isomorphic
+from rdflib.compare import isomorphic, graph_diff
 from src.owl2Shacl import create_shacl, rdf_validate
 from rdflib import Graph, SH, BNode, RDF, XSD, Literal, Namespace, OWL, RDFS
 from rdflib.term import URIRef
@@ -303,7 +303,17 @@ class TestOwl2Shacl(unittest.TestCase):
         logging.info(expected_result.serialize(format="turtle"))
         logging.info(sh_graph.serialize(format="turtle"))
         assert isomorphic(expected_result, sh_graph)
-
+        # diff = graph_diff(expected_result, sh_graph)
+        # expected = diff[1]
+        # actual = diff[2]
+        # deleted_content = (expected - actual)
+        # added_content = (actual - expected)
+        # print(f"In expected not in actual: {len(deleted_content)}")
+        # print(deleted_content.serialize(format="turtle"))
+        # print(f"in actual not in expected: {len(added_content)}")
+        # print(added_content.serialize(format="turtle"))
+        # print(f"in both: {len(diff[0])}")
+        # print(diff[0].serialize(format="turtle"))
 
 if __name__ == '__main__':
     unittest.main()

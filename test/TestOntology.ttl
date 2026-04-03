@@ -9,6 +9,7 @@
 @prefix foaf: <http://xmlns.com/foaf/spec/> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @base <http://test.data#> .
 
 <http://test.data#> rdf:type owl:Ontology ;
@@ -63,6 +64,24 @@ td:testDatatypeProperty2 rdf:type owl:DatatypeProperty ;
                          rdfs:label "test data property 2" .
 
 
+td:testDataTypeProperty3 rdf:type owl:DatatypeProperty ;
+                         rdfs:label "test data property 3" ;
+                         rdfs:range [ rdf:type rdfs:Datatype ;
+                                      owl:onDatatype xsd:string ;
+                                      owl:withRestrictions (
+                                            [xsd:length "2"]
+                                              ) ]
+.
+
+td:testDataTypeProperty4 rdf:type owl:DatatypeProperty ;
+                         rdfs:label "test data property 3" ;
+                         rdfs:range [ rdf:type rdfs:Datatype ;
+                                      owl:onDatatype xsd:string ;
+                                      owl:withRestrictions (
+                                                   [xsd:minLength "2"]
+                                                   [xsd:maxLength "100"]
+                                               ) ]
+.
 #################################################################
 #    Classes
 #################################################################

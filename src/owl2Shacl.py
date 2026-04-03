@@ -24,6 +24,42 @@ def _insert_list_item(sh_graph: Graph, ont_graph: Graph, item: Node, tgt_typ: UR
     return rest
 
 
+def _insert_datatype_facet(sh_graph: Graph, ont_graph: Graph, first: Node, property_shape: Node):
+    facet = ont_graph.predicate_objects(subject=first)
+    for p, o in facet:
+        if p == XSD.minLength:
+            shape_p = SH.minLength
+            datatype = XSD.integer
+        elif p == XSD.maxLength:
+            shape_p = SH.maxLength
+            datatype = XSD.integer
+        elif p == XSD.pattern:
+            shape_p = SH.pattern
+            datatype = XSD.string
+        # elif p == RDF.langRange:
+        #     shape_p = SH.languageIn
+        #     datatype = RDF.List
+        elif p == XSD.length:
+            shape_p = (SH.maxLength, SH.minLength)
+            datatype = XSD.integer
+        elif p == XSD.maxExclusive:
+            shape_p = SH.maxExclusive
+            datatype = XSD.integer
+        elif p == XSD.maxInclusive:
+            shape_p = SH.minInclusive
+            datatype = XSD.integer
+        elif p == XSD.minExclusive:
+            shape_p = SH.minExclusive
+            datatype = XSD.integer
+        elif p == XSD.minInclusive:
+            shape_p = SH.minInclusive
+            datatype = XSD.integer
+        if type(shape_p) == tuple:
+            sh_graph.add((property_shape, shape_p[0], Literal(o, datatype=datatype)))
+            sh_graph.add((property_shape, shape_p[1], Literal(o, datatype=datatype)))
+        else:
+            sh_graph.add((property_shape, shape_p, Literal(o, datatype=datatype)))
+
 def _add_shape_triples_to_graph(ont_graph, sh_graph, property_type, property_shape, targets, prop):
     tgt_typ = SH_CLASS
     if "DomainShape" in str(property_shape):
@@ -38,16 +74,45 @@ def _add_shape_triples_to_graph(ont_graph, sh_graph, property_type, property_sha
         sh_graph.add((property_shape, tgt, prop))
         sh_graph.add((property_shape, SH.severity, SH.Warning))
         if type(target) is BNode:
-            item = ont_graph.value(subject=target, predicate=OWL.unionOf)
-            if item:
-                # add the shacl 'or' pointing to the list bnode
-                sh_graph.add((property_shape, SH_OR, item))
-                # add triples for first item in the list
-                rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
-                # add triples for remaining list items
-                while rest != RDF.nil:
-                    item = rest
+            if tgt == SH.targetSubjectsOf:
+                # domain is a union of classes
+                item = ont_graph.value(subject=target, predicate=OWL.unionOf)
+                if item:
+                    # add the shacl 'or' pointing to the list bnode
+                    sh_graph.add((property_shape, SH_OR, item))
+                    # add triples for first item in the list
                     rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+                    # add triples for remaining list items
+                    while rest != RDF.nil:
+                        item = rest
+                        rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+            else:
+                # range is a datatype with restrictions
+                if (target, OWL.unionOf, None) in ont_graph:
+                    # range is a union of datatypes
+                    item = ont_graph.value(subject=target, predicate=OWL.unionOf)
+                    if item:
+                        # add the shacl 'or' pointing to the list bnode
+                        sh_graph.add((property_shape, SH_OR, item))
+                        # add triples for first item in the list
+                        rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+                        # add triples for remaining list items
+                        while rest != RDF.nil:
+                            item = rest
+                            rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+                elif (target, OWL.withRestrictions, None) in ont_graph:
+                    datatype = ont_graph.value(subject=target, predicate=OWL.onDatatype)
+                    sh_graph.add((property_shape, SH.datatype, datatype))
+                    item = ont_graph.value(subject=target, predicate=OWL.withRestrictions)
+                    first = ont_graph.value(subject=item, predicate=RDF.first)
+                    rest = ont_graph.value(subject=item, predicate=RDF.rest)
+                    _insert_datatype_facet(ont_graph=ont_graph, sh_graph=sh_graph, first=first,
+                                           property_shape=property_shape)
+                    while type(rest) is BNode:
+                        first = ont_graph.value(subject=rest, predicate=RDF.first)
+                        _insert_datatype_facet(ont_graph=ont_graph, sh_graph=sh_graph, first=first,
+                                               property_shape=property_shape)
+                        rest = ont_graph.value(subject=first, predicate=RDF.rest)
         else:
             sh_graph.add((property_shape, tgt_typ, target))
 
