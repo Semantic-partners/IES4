@@ -80,6 +80,13 @@ td:TestDataTypeProperty4RangeShape
     sh:severity        sh:Warning ;
     sh:targetObjectsOf td:testDataTypeProperty4 .
 
+td:TestDataTypeProperty5RangeShape
+    a                  sh:NodeShape ;
+    sh:datatype        xsd:string ;
+    sh:pattern         "^Test pattern facet$"^^xsd:string ;
+    sh:severity        sh:Warning ;
+    sh:targetObjectsOf td:testDataTypeProperty5 .
+
 td:TestObjectPropertyDomainShape
     a                   sh:NodeShape ;
     sh:or               ( [ sh:class td:TestClassA ] [ sh:class td:TestClassB ] ) ;

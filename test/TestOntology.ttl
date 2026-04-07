@@ -74,12 +74,20 @@ td:testDataTypeProperty3 rdf:type owl:DatatypeProperty ;
 .
 
 td:testDataTypeProperty4 rdf:type owl:DatatypeProperty ;
-                         rdfs:label "test data property 3" ;
+                         rdfs:label "test data property 4" ;
                          rdfs:range [ rdf:type rdfs:Datatype ;
                                       owl:onDatatype xsd:string ;
                                       owl:withRestrictions (
                                                    [xsd:minLength "2"]
                                                    [xsd:maxLength "100"]
+                                               ) ]
+.
+td:testDataTypeProperty5 rdf:type owl:DatatypeProperty ;
+                         rdfs:label "test data property 5" ;
+                         rdfs:range [ rdf:type rdfs:Datatype ;
+                                      owl:onDatatype xsd:string ;
+                                      owl:withRestrictions (
+                                                   [xsd:pattern "^Test pattern facet$"]
                                                ) ]
 .
 #################################################################

@@ -24,7 +24,7 @@ Currently this function will handle the creation of node shapes for the followin
 
 * Named classes with  property shapes for any associated restrictions. The shapes are named after the class with a suffix of Shape.
 * Domain shapes for any domain restrictions on the properties in the ontology.
-* Range shapes for any range restrictions on the properties in the ontology.
+* Range shapes for any range restrictions on object properties and datatype restrictions and facets on data properties in the ontology.
 
 It does not yet support the creation of shapes based on general axioms or disjoints within the ontology.
 
