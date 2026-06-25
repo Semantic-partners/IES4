@@ -139,6 +139,7 @@ def bind_restriction_values(ont_graph, restriction: Node):
     return {
         "path": ont_graph.value(subject=restriction, predicate=OWL.onProperty),
         "class": ont_graph.value(subject=restriction, predicate=OWL.onClass),
+        "data_range": ont_graph.value(subject=restriction, predicate=OWL.onDataRange),
         "some": ont_graph.value(subject=restriction, predicate=OWL.someValuesFrom),
         "all_values": ont_graph.value(subject=restriction, predicate=OWL.allValuesFrom),
         "value": ont_graph.value(subject=restriction, predicate=OWL.hasValue),
@@ -217,6 +218,10 @@ def add_restriction(ont_graph, sh_graph, item, restriction):
                 bnode = BNode()
                 sh_graph.add((property_shape, SH.qualifiedValueShape, bnode))
                 sh_graph.add((bnode, SH_CLASS, restriction["class"]))
+        if restriction["data_range"]:
+            bnode = BNode()
+            sh_graph.add((property_shape, SH.qualifiedValueShape, bnode))
+            sh_graph.add((bnode, SH.datatype, restriction["data_range"]))
         if restriction["value"]: sh_graph.add((property_shape, SH.hasValue, restriction["value"]))
         if restriction["minc"]: sh_graph.add((property_shape, SH.minCount, restriction["minc"]))
         if restriction["minqc"]:
@@ -266,8 +271,8 @@ def create_shacl(ontology: str | Path | Graph) -> Tuple[Graph, Graph]:
     for s, p, o in sh_graph:
         if o.__class__ == rdflib.term.Literal and Literal(o).datatype == XSD.nonNegativeInteger:
             updated_o = Literal(Literal(o).value, datatype=XSD.integer)
-            sh_graph.remove((s, p, o))
-            sh_graph.add((s, p, updated_o))
+            # sh_graph.remove((s, p, o))
+            sh_graph.set((s, p, updated_o))
     _create_node_shapes_for_properties(ont_graph, sh_graph, OWL.ObjectProperty)
     _create_node_shapes_for_properties(ont_graph, sh_graph, OWL.DatatypeProperty)
 
