@@ -1,0 +1,351 @@
+import argparse
+import sys
+import rdflib
+from pathlib import Path
+from typing import Tuple
+from pyshacl import validate
+from rdflib import Graph, RDF, RDFS, SH, OWL, XSD
+from rdflib.compare import isomorphic, graph_diff
+from rdflib.term import URIRef, BNode, Literal, Node
+from itertools import chain
+
+SH_CLASS = URIRef("http://www.w3.org/ns/shacl#class")
+SH_OR = URIRef("http://www.w3.org/ns/shacl#or")
+SH_AND = URIRef("http://www.w3.org/ns/shacl#and")
+
+
+def _insert_list_item(sh_graph: Graph, ont_graph: Graph, item: Node, tgt_typ: URIRef) -> Node:
+    bnode = BNode()
+    rest = ont_graph.value(subject=item, predicate=RDF.rest)
+    value = ont_graph.value(subject=item, predicate=RDF.first)
+    sh_graph.add((item, RDF.first, bnode))
+    sh_graph.add((bnode, tgt_typ, value))
+    sh_graph.add((item, RDF.rest, rest))
+    return rest
+
+
+def _insert_datatype_facet(sh_graph: Graph, ont_graph: Graph, first: Node, property_shape: Node):
+    facet = ont_graph.predicate_objects(subject=first)
+    for p, o in facet:
+        if p == XSD.minLength:
+            shape_p = SH.minLength
+            datatype = XSD.integer
+        elif p == XSD.maxLength:
+            shape_p = SH.maxLength
+            datatype = XSD.integer
+        elif p == XSD.pattern:
+            shape_p = SH.pattern
+            datatype = XSD.string
+        # elif p == RDF.langRange:
+        #     shape_p = SH.languageIn
+        #     datatype = RDF.List
+        elif p == XSD.length:
+            shape_p = (SH.maxLength, SH.minLength)
+            datatype = XSD.integer
+        elif p == XSD.maxExclusive:
+            shape_p = SH.maxExclusive
+            datatype = XSD.integer
+        elif p == XSD.maxInclusive:
+            shape_p = SH.minInclusive
+            datatype = XSD.integer
+        elif p == XSD.minExclusive:
+            shape_p = SH.minExclusive
+            datatype = XSD.integer
+        elif p == XSD.minInclusive:
+            shape_p = SH.minInclusive
+            datatype = XSD.integer
+        if type(shape_p) == tuple:
+            sh_graph.add((property_shape, shape_p[0], Literal(o, datatype=datatype)))
+            sh_graph.add((property_shape, shape_p[1], Literal(o, datatype=datatype)))
+        else:
+            sh_graph.add((property_shape, shape_p, Literal(o, datatype=datatype)))
+
+def _add_shape_triples_to_graph(ont_graph, sh_graph, property_type, property_shape, targets, prop):
+    tgt_typ = SH_CLASS
+    if "DomainShape" in str(property_shape):
+        tgt = SH.targetSubjectsOf
+    else:
+        tgt = SH.targetObjectsOf
+        if property_type is OWL.DatatypeProperty:
+            tgt_typ = SH.datatype
+
+    for target in targets:
+        sh_graph.add((property_shape, RDF.type, SH.NodeShape), )
+        sh_graph.add((property_shape, tgt, prop))
+        sh_graph.add((property_shape, SH.severity, SH.Warning))
+        if type(target) is BNode:
+            if tgt == SH.targetSubjectsOf:
+                # domain is a union of classes
+                item = ont_graph.value(subject=target, predicate=OWL.unionOf)
+                if item:
+                    # add the shacl 'or' pointing to the list bnode
+                    sh_graph.add((property_shape, SH_OR, item))
+                    # add triples for first item in the list
+                    rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+                    # add triples for remaining list items
+                    while rest != RDF.nil:
+                        item = rest
+                        rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+            else:
+                # range is a datatype with restrictions
+                if (target, OWL.unionOf, None) in ont_graph:
+                    # range is a union of datatypes
+                    item = ont_graph.value(subject=target, predicate=OWL.unionOf)
+                    if item:
+                        # add the shacl 'or' pointing to the list bnode
+                        sh_graph.add((property_shape, SH_OR, item))
+                        # add triples for first item in the list
+                        rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+                        # add triples for remaining list items
+                        while rest != RDF.nil:
+                            item = rest
+                            rest = _insert_list_item(sh_graph, ont_graph, item, tgt_typ)
+                elif (target, OWL.withRestrictions, None) in ont_graph:
+                    datatype = ont_graph.value(subject=target, predicate=OWL.onDatatype)
+                    sh_graph.add((property_shape, SH.datatype, datatype))
+                    item = ont_graph.value(subject=target, predicate=OWL.withRestrictions)
+                    first = ont_graph.value(subject=item, predicate=RDF.first)
+                    rest = ont_graph.value(subject=item, predicate=RDF.rest)
+                    _insert_datatype_facet(ont_graph=ont_graph, sh_graph=sh_graph, first=first,
+                                           property_shape=property_shape)
+                    while type(rest) is BNode:
+                        first = ont_graph.value(subject=rest, predicate=RDF.first)
+                        _insert_datatype_facet(ont_graph=ont_graph, sh_graph=sh_graph, first=first,
+                                               property_shape=property_shape)
+                        rest = ont_graph.value(subject=first, predicate=RDF.rest)
+        else:
+            sh_graph.add((property_shape, tgt_typ, target))
+
+
+def _create_node_shapes_for_properties(ont_graph, sh_graph, property_type):
+    for prop in ont_graph.subjects(predicate=RDF.type, object=property_type):
+        # process domains
+        prop_shape_base = str(prop)
+        for name, ns in sh_graph.namespaces():
+            if ns in prop:
+                prop_name = URIRef(prop).removeprefix(ns)
+                capitalized_prop_name = prop_name[0].upper() + prop_name[1:]
+                prop_shape_base = ns + capitalized_prop_name
+        targets = ont_graph.objects(subject=prop, predicate=RDFS.domain)
+        property_shape = URIRef(prop_shape_base + "DomainShape")
+        _add_shape_triples_to_graph(ont_graph, sh_graph, property_type, property_shape, targets, prop)
+        # process_ranges
+        targets = ont_graph.objects(subject=prop, predicate=RDFS.range)
+        property_shape = URIRef(prop_shape_base + "RangeShape")
+        _add_shape_triples_to_graph(ont_graph, sh_graph, property_type, property_shape, targets, prop)
+
+
+def bind_restriction_values(ont_graph, restriction: Node):
+    return {
+        "path": ont_graph.value(subject=restriction, predicate=OWL.onProperty),
+        "class": ont_graph.value(subject=restriction, predicate=OWL.onClass),
+        "data_range": ont_graph.value(subject=restriction, predicate=OWL.onDataRange),
+        "some": ont_graph.value(subject=restriction, predicate=OWL.someValuesFrom),
+        "all_values": ont_graph.value(subject=restriction, predicate=OWL.allValuesFrom),
+        "value": ont_graph.value(subject=restriction, predicate=OWL.hasValue),
+        "minqc": ont_graph.value(subject=restriction, predicate=OWL.minQualifiedCardinality),
+        "minc": ont_graph.value(subject=restriction, predicate=OWL.minCardinality),
+        "maxqc": ont_graph.value(subject=restriction, predicate=OWL.maxQualifiedCardinality),
+        "maxc": ont_graph.value(subject=restriction, predicate=OWL.maxCardinality),
+        "qexact": ont_graph.value(subject=restriction, predicate=OWL.qualifiedCardinality),
+        "exact": ont_graph.value(subject=restriction, predicate=OWL.cardinality),
+        "union": ont_graph.value(subject=restriction, predicate=OWL.unionOf),
+        "intersection": ont_graph.value(subject=restriction, predicate=OWL.intersectionOf),
+        "first": ont_graph.value(subject=restriction, predicate=RDF.first),
+        "rest": ont_graph.value(subject=restriction, predicate=RDF.rest)
+    }
+
+
+def add_restriction(ont_graph, sh_graph, item, restriction):
+    property_shape = BNode()
+    if restriction["all_values"]:
+        if type(item) is not BNode:
+            sh_graph.add((URIRef(str(item) + 'Shape'), SH.property, property_shape))
+        else:
+            sh_graph.add((item, SH.property, property_shape))
+        sh_graph.add((property_shape, SH.path, restriction["path"]))
+        sh_graph.add((property_shape, SH_CLASS, restriction["all_values"]))
+        # prevent defaulting to SH.Violation
+        sh_graph.add((property_shape, SH.severity, SH.Warning))
+    elif restriction["some"]:
+        if type(item) is not BNode:
+            sh_graph.add((URIRef(str(item) + 'Shape'), SH.property, property_shape))
+        else:
+            property_shape = item
+        sh_graph.add((property_shape, SH.path, restriction["path"]))
+        sh_graph.add((property_shape, SH.minCount, Literal(1, datatype=XSD.integer)))
+        sh_graph.add((property_shape, SH_CLASS, restriction["some"]))
+        # prevent defaulting to SH.Violation
+        sh_graph.add((property_shape, SH.severity, SH.Warning))
+    elif restriction["union"]:
+        if type(item) is not BNode:
+            sh_graph.add((URIRef(str(item) + 'Shape'), SH_OR, restriction["union"]))
+        else:
+            sh_graph.add((item, SH_OR, restriction["union"]))
+        item = restriction["union"]
+        restriction_details = bind_restriction_values(ont_graph, item)
+        add_restriction(ont_graph, sh_graph, item, restriction_details)
+    elif restriction["intersection"]:
+        if type(item) is not BNode:
+            sh_graph.add((URIRef(str(item) + 'Shape'), SH_AND, restriction["intersection"]))
+        else:
+            sh_graph.add((item, SH_AND, restriction["intersection"]))
+        item = restriction["intersection"]
+        restriction_details = bind_restriction_values(ont_graph, item)
+        add_restriction(ont_graph, sh_graph, item, restriction_details)
+    elif restriction["first"]:
+        sh_graph.add((item, RDF.first, restriction["first"]))
+        sh_graph.add((item, RDF.rest, restriction["rest"]))
+        item = restriction["first"]
+        restriction_details = bind_restriction_values(ont_graph, item)
+        add_restriction(ont_graph, sh_graph, item, restriction_details)
+        if restriction["rest"] != RDF.nil:
+            item = restriction["rest"]
+            restriction_details = bind_restriction_values(ont_graph, item)
+            add_restriction(ont_graph, sh_graph, item, restriction_details)
+    else:
+        if type(item) is not BNode:
+            sh_graph.add((URIRef(str(item) + 'Shape'), SH.property, property_shape))
+        else:
+            sh_graph.add((item, SH.property, property_shape))
+
+        if restriction["path"]: sh_graph.add((property_shape, SH.path, restriction["path"]))
+        if restriction["class"]:
+            # if we are not dealing with qualified cardinality
+            if not restriction["maxqc"] and not restriction["minqc"] and not restriction["qexact"]:
+                sh_graph.add((property_shape, SH_CLASS, restriction["class"]))
+            else:
+                bnode = BNode()
+                sh_graph.add((property_shape, SH.qualifiedValueShape, bnode))
+                sh_graph.add((bnode, SH_CLASS, restriction["class"]))
+        if restriction["data_range"]:
+            bnode = BNode()
+            sh_graph.add((property_shape, SH.qualifiedValueShape, bnode))
+            sh_graph.add((bnode, SH.datatype, restriction["data_range"]))
+        if restriction["value"]: sh_graph.add((property_shape, SH.hasValue, restriction["value"]))
+        if restriction["minc"]: sh_graph.add((property_shape, SH.minCount, restriction["minc"]))
+        if restriction["minqc"]:
+            sh_graph.add((property_shape, SH.qualifiedMinCount, restriction["minqc"]))
+        if restriction["maxc"]: sh_graph.add((property_shape, SH.maxCount, restriction["maxc"]))
+        if restriction["maxqc"]: sh_graph.add((property_shape, SH.qualifiedMaxCount, restriction["maxqc"]))
+        if restriction["exact"]:
+            sh_graph.add((property_shape, SH.minCount, restriction["exact"]))
+            sh_graph.add((property_shape, SH.maxCount, restriction["exact"]))
+        if restriction["qexact"]:
+            sh_graph.add((property_shape, SH.qualifiedMinCount, restriction["qexact"]))
+            sh_graph.add((property_shape, SH.qualifiedMaxCount, restriction["qexact"]))
+        # prevent defaulting to SH.Violation
+        sh_graph.add((property_shape, SH.severity, SH.Warning))
+
+
+def _create_node_shapes_for_classes(ont_graph: Graph, sh_graph: Graph) -> None:
+    rdf_classes = ont_graph.subjects(predicate=RDF.type, object=RDFS.Class)
+    owl_classes = ont_graph.subjects(predicate=RDF.type, object=OWL.Class)
+    classes = chain(rdf_classes, owl_classes)
+
+    for item in classes:
+        if type(item) is not BNode:  # only create shapes for identified classes
+            sh_graph.add((URIRef(str(item) + 'Shape'), RDF.type, SH.NodeShape))
+            sh_graph.add((URIRef(str(item) + 'Shape'), SH.targetClass, item))
+            sh_graph.add((URIRef(str(item) + 'Shape'), SH.severity, SH.Warning))
+
+            superclasses = ont_graph.objects(subject=item, predicate=RDFS.subClassOf)
+            for superclass in superclasses:
+                if type(superclass) is BNode:  # i.e. it is a restriction
+                    restriction_details = bind_restriction_values(ont_graph, superclass)
+                    add_restriction(ont_graph, sh_graph, item, restriction_details)
+
+
+def create_shacl(ontology: str | Path | Graph) -> Tuple[Graph, Graph]:
+    if isinstance(ontology, (Path, str)):
+        ont_graph = Graph().parse(ontology)
+    else:
+        ont_graph = ontology
+    sh_graph = Graph()
+    # bind namespaces from ontology to shape graph
+    for name, ns in ont_graph.namespaces():
+        sh_graph.bind(name, ns, replace=True)
+
+    _create_node_shapes_for_classes(ont_graph, sh_graph)
+    #  crude way of converting nonNegativeIntegers types to integers
+    for s, p, o in sh_graph:
+        if o.__class__ == rdflib.term.Literal and Literal(o).datatype == XSD.nonNegativeInteger:
+            updated_o = Literal(Literal(o).value, datatype=XSD.integer)
+            # sh_graph.remove((s, p, o))
+            sh_graph.set((s, p, updated_o))
+    _create_node_shapes_for_properties(ont_graph, sh_graph, OWL.ObjectProperty)
+    _create_node_shapes_for_properties(ont_graph, sh_graph, OWL.DatatypeProperty)
+
+    return ont_graph, sh_graph
+
+
+def rdf_validate(
+        data_file: str | Graph,
+        ont_graph: str | Graph,
+        sh_graph: str | Graph,
+        # We have added inference as an argument to allow users to specify
+        # the type of inference they want to apply during validation.
+        # The default value is set to "none", which means no inference will be applied unless specified otherwise.
+        inference: str = "none"
+) -> Tuple[bool, Graph, str]:
+    """
+    Validate RDF data using SHACL shapes.
+
+    Args:
+        inference: One of "rdfs", "owlrl", "both", or "none"
+    """
+    conforms, results_graph, results_text = validate(data_file,
+                                                     shacl_graph=sh_graph,
+                                                     ont_graph=ont_graph,
+                                                     inference=inference,
+                                                     abort_on_first=False,
+                                                     allow_infos=False,
+                                                     allow_warnings=False,
+                                                     meta_shacl=False,
+                                                     advanced=True,
+                                                     js=False,
+                                                     debug=False)
+
+    return conforms, results_graph, results_text
+
+
+def _parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-o", "--ontology", help="Path to ontology - required", required=True)
+    parser.add_argument("-v", "--validate", help="Path of file to validate", default=None)
+    parser.add_argument("-s", "--shacl", help="Location for resulting shapes graph", required=True)
+    parser.add_argument("-d", "--dryrun", help="Location for resulting shapes graph", action='store_true')
+
+    return parser.parse_args()
+
+
+def main(argv):
+    args = _parse_args()
+    if args.validate:
+        conforms, results_graph, results_text = rdf_validate(args.validate, args.ontology, args.shacl)
+        # print(results_graph.serialize(format="turtle"))
+        print(results_text)
+    else:
+        ont_graph, sh_graph = create_shacl(args.ontology)
+        if args.dryrun:
+            existing_shacl = Graph()
+            try:
+                existing_shacl.parse(args.shacl)
+                assert isomorphic(existing_shacl, sh_graph)
+                print("There are no changes in the shacl shape graph")
+            except AssertionError:
+                diff = graph_diff(existing_shacl, sh_graph)
+                in_existing = diff[1]
+                in_new = diff[2]
+                deleted_content = (in_existing - in_new)
+                added_content = (in_new - in_existing)
+                print(f"Triples that would be deleted by this run: {len(deleted_content)}")
+                print(deleted_content.serialize(format="turtle"))
+                print(f"Triple that would be create by this run: {len(added_content)}")
+                print(added_content.serialize(format="turtle"))
+        else:
+            sh_graph.serialize(format="turtle", destination=args.shacl)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

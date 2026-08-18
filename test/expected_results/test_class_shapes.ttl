@@ -1,0 +1,100 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix td:  <http://test.data#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+td:TestClassAShape
+    a sh:NodeShape ;
+    sh:property [ sh:path td:testObjectProperty ;
+                  sh:qualifiedMinCount 1 ;
+                  sh:qualifiedValueShape [ sh:class td:TestClassD ] ;
+                  sh:severity sh:Warning ],
+                [ sh:path td:testObjectProperty ;
+                  sh:qualifiedMaxCount 2 ;
+                  sh:qualifiedValueShape [ sh:class td:TestClassD ] ;
+                  sh:severity sh:Warning ] ;
+    sh:severity sh:Warning ;
+    sh:targetClass td:TestClassA .
+
+td:TestClassBShape
+    a              sh:NodeShape ;
+    sh:or          ( [ sh:class    td:TestClassA ;
+                       sh:minCount "1"^^xsd:integer ;
+                       sh:path     td:testObjectProperty ;
+                       sh:severity sh:Warning ]
+                     [ sh:class    td:TestClassD ;
+                       sh:minCount "1"^^xsd:integer ;
+                       sh:path     td:testObjectProperty ;
+                       sh:severity sh:Warning] ) ;
+    sh:severity    sh:Warning ;
+    sh:targetClass td:TestClassB .
+
+td:TestClassCShape
+    a sh:NodeShape ;
+
+    sh:property [ sh:class td:TestClassD ;
+                  sh:path td:testObjectProperty ;
+                  sh:severity sh:Warning],
+                [ sh:path td:testObjectProperty ;
+                  sh:qualifiedMaxCount 1 ;
+                  sh:qualifiedMinCount 1 ;
+                  sh:qualifiedValueShape [ sh:class td:TestClassD ] ;
+                  sh:severity sh:Warning ] ;
+    sh:severity sh:Warning ;
+    sh:targetClass td:TestClassC .
+
+td:TestClassDShape
+    a              sh:NodeShape ;
+    sh:property    [ sh:maxCount "1"^^xsd:integer ;
+                     sh:minCount "1"^^xsd:integer ;
+                     sh:path     td:testDatatypeProperty2 ;
+                     sh:severity sh:Warning ] ;
+    sh:severity    sh:Warning ;
+    sh:targetClass td:TestClassD .
+
+td:TestDataTypePropertyDomainShape
+    a                   sh:NodeShape ;
+    sh:or               ( [ sh:class td:TestClassA ] [ sh:class td:TestClassB ] ) ;
+    sh:severity         sh:Warning ;
+    sh:targetSubjectsOf td:testDataTypeProperty .
+
+td:TestDataTypePropertyRangeShape
+    a                  sh:NodeShape ;
+    sh:or              ( [ sh:datatype xsd:boolean ] [ sh:datatype xsd:date ] [ sh:datatype xsd:integer ] ) ;
+    sh:severity        sh:Warning ;
+    sh:targetObjectsOf td:testDataTypeProperty .
+
+td:TestDataTypeProperty3RangeShape
+    a                  sh:NodeShape ;
+    sh:datatype        xsd:string ;
+    sh:minLength       2 ;
+    sh:maxLength       2 ;
+    sh:severity        sh:Warning ;
+    sh:targetObjectsOf td:testDataTypeProperty3 .
+
+td:TestDataTypeProperty4RangeShape
+    a                  sh:NodeShape ;
+    sh:datatype        xsd:string ;
+    sh:minLength       2 ;
+    sh:maxLength       100 ;
+    sh:severity        sh:Warning ;
+    sh:targetObjectsOf td:testDataTypeProperty4 .
+
+td:TestDataTypeProperty5RangeShape
+    a                  sh:NodeShape ;
+    sh:datatype        xsd:string ;
+    sh:pattern         "^Test pattern facet$"^^xsd:string ;
+    sh:severity        sh:Warning ;
+    sh:targetObjectsOf td:testDataTypeProperty5 .
+
+td:TestObjectPropertyDomainShape
+    a                   sh:NodeShape ;
+    sh:or               ( [ sh:class td:TestClassA ] [ sh:class td:TestClassB ] ) ;
+    sh:severity         sh:Warning ;
+    sh:targetSubjectsOf td:testObjectProperty .
+
+td:TestObjectPropertyRangeShape
+    a                  sh:NodeShape ;
+    sh:class           td:TestClassC ;
+    sh:severity        sh:Warning ;
+    sh:targetObjectsOf td:testObjectProperty .
